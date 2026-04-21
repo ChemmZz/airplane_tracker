@@ -1,5 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
+import { MAX_FAVORITE_REGIONS } from "@/lib/favorites";
 import { supabaseForUser } from "@/lib/supabase-server";
 import { RegionCard } from "@/components/RegionCard";
 import type { Region } from "@/lib/types";
@@ -31,7 +32,7 @@ export default async function DashboardPage() {
     return (
       <div className="rounded-lg border border-dashed border-slate-700 p-10 text-center">
         <h2 className="text-xl font-semibold">No favorites yet</h2>
-        <p className="mt-2 text-slate-400">Pick a few regions to start watching.</p>
+        <p className="mt-2 text-slate-400">Pick up to {MAX_FAVORITE_REGIONS} regions to start watching.</p>
         <Link
           href="/regions"
           className="mt-6 inline-block rounded-md bg-sky-500 px-4 py-2 font-medium text-white hover:bg-sky-400"
