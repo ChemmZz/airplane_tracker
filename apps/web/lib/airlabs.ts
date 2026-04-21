@@ -100,6 +100,7 @@ export async function getAirportByCode(code: string | null | undefined) {
 }
 
 export async function getArrivalBoard(arrivalAirportIata: string, limit = 10) {
+  const arrivalAirport = await getAirportByCode(arrivalAirportIata).catch(() => null);
   const schedules = await airlabs<AirLabsSchedule[]>("schedules", {
     arr_iata: arrivalAirportIata,
     limit: String(limit),
@@ -129,13 +130,27 @@ export async function getArrivalBoard(arrivalAirportIata: string, limit = 10) {
   );
   const airlineNames = Object.fromEntries(airlinePairs);
 
-  return schedules.map((schedule) => ({
-    airline_name: schedule.airline_iata ? airlineNames[schedule.airline_iata] ?? schedule.airline_iata : "Unknown",
-    airline_iata: schedule.airline_iata ?? null,
-    flight_iata: schedule.flight_iata ?? null,
-    flight_number: schedule.flight_number ?? null,
-    status: schedule.status ?? "scheduled",
-    origin_code: schedule.dep_iata ?? schedule.dep_icao ?? "—",
-    estimated_arrival_utc: schedule.arr_estimated_utc ?? schedule.arr_time_utc ?? null,
-  }));
+  const originCodes = [...new Set(schedules.map((s) => s.dep_iata).filter(Boolean))] as string[];
+  const originPairs = await Promise.all(
+    originCodes.map(async (code) => {
+      const airport = await getAirportByCode(code).catch(() => null);
+      return [code, airport?.name ?? code] as const;
+    }),
+  );
+  const originNames = Object.fromEntries(originPairs);
+
+  return {
+    airportCode: arrivalAirportIata,
+    airportName: arrivalAirport?.name ?? arrivalAirportIata,
+    rows: schedules.map((schedule) => ({
+      airline_name: schedule.airline_iata ? airlineNames[schedule.airline_iata] ?? schedule.airline_iata : "Unknown",
+      airline_iata: schedule.airline_iata ?? null,
+      flight_iata: schedule.flight_iata ?? null,
+      flight_number: schedule.flight_number ?? null,
+      status: schedule.status ?? "scheduled",
+      origin_code: schedule.dep_iata ?? schedule.dep_icao ?? "—",
+      origin_name: schedule.dep_iata ? originNames[schedule.dep_iata] ?? schedule.dep_iata : schedule.dep_icao ?? "Unknown airport",
+      estimated_arrival_utc: schedule.arr_estimated_utc ?? schedule.arr_time_utc ?? null,
+    })),
+  };
 }

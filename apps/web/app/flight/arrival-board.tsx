@@ -13,14 +13,17 @@ type ArrivalRow = {
   flight_number: string | null;
   status: string;
   origin_code: string;
+  origin_name: string;
   estimated_arrival_utc: string | null;
 };
 
 export function ArrivalBoard({
   airportCode,
+  airportName,
   rows,
 }: {
   airportCode: string;
+  airportName: string;
   rows: ArrivalRow[];
 }) {
   const router = useRouter();
@@ -58,7 +61,8 @@ export function ArrivalBoard({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-sky-300">Quick selection</p>
-          <h2 className="mt-1 text-xl font-semibold text-white">Next arrivals into {airportCode}</h2>
+          <h2 className="mt-1 text-xl font-semibold text-white">Next arrivals into {airportName}</h2>
+          <p className="mt-1 text-sm text-slate-400">{airportCode}</p>
         </div>
         <Link href={`/flight?airport=${encodeURIComponent(airportCode)}`} className="text-sm text-sky-300 hover:underline">
           Refresh board
@@ -66,14 +70,14 @@ export function ArrivalBoard({
       </div>
 
       <div className="mt-4 overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
+        <table className="min-w-[920px] text-left text-sm">
           <thead className="text-xs uppercase tracking-[0.16em] text-slate-500">
             <tr>
               <th className="pb-3 pr-4">Flight</th>
               <th className="pb-3 pr-4">Airline</th>
               <th className="pb-3 pr-4">Status</th>
-              <th className="pb-3 pr-4">Origin</th>
-              <th className="pb-3 pr-4">ETA</th>
+              <th className="pb-3 pr-6">Origin</th>
+              <th className="pb-3 pr-6">ETA</th>
               <th className="pb-3">Action</th>
             </tr>
           </thead>
@@ -82,12 +86,15 @@ export function ArrivalBoard({
               const code = row.flight_iata ?? row.flight_number ?? "";
               return (
                 <tr key={`${code}-${row.origin_code}`} className="border-t border-slate-800 text-slate-200">
-                  <td className="py-3 pr-4 font-mono">{code || "—"}</td>
-                  <td className="py-3 pr-4">{row.airline_name}</td>
-                  <td className="py-3 pr-4">{row.status}</td>
-                  <td className="py-3 pr-4">{row.origin_code}</td>
-                  <td className="py-3 pr-4">{formatUtc(row.estimated_arrival_utc)}</td>
-                  <td className="py-3">
+                  <td className="py-3 pr-4 font-mono whitespace-nowrap">{code || "—"}</td>
+                  <td className="py-3 pr-4 whitespace-nowrap">{row.airline_name}</td>
+                  <td className="py-3 pr-4 whitespace-nowrap">{row.status}</td>
+                  <td className="py-3 pr-6 min-w-[220px]">
+                    <div className="font-medium text-white">{row.origin_name}</div>
+                    <div className="text-xs text-slate-500">{row.origin_code}</div>
+                  </td>
+                  <td className="py-3 pr-6 whitespace-nowrap">{formatUtc(row.estimated_arrival_utc)}</td>
+                  <td className="py-3 whitespace-nowrap">
                     {code ? (
                       <button
                         type="button"

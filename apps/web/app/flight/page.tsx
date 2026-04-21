@@ -19,18 +19,22 @@ export default async function FlightPage({
   const params = (await searchParams) ?? {};
   const trackedFlight = await getTrackedFlightForUser();
   const airportCode = (params.airport ?? trackedFlight?.arr_iata ?? "ORD").toUpperCase();
-  const arrivalBoard = await getArrivalBoard(airportCode, 10).catch(() => []);
+  const arrivalBoard = await getArrivalBoard(airportCode, 10).catch(() => ({
+    airportCode,
+    airportName: airportCode,
+    rows: [],
+  }));
 
   return (
     <>
-      <div className="mx-auto max-w-5xl space-y-6 py-8">
+      <div className="mx-auto max-w-7xl space-y-6 py-8">
         <div>
           <h1 className="text-3xl font-bold">Track a flight</h1>
           <p className="mt-2 text-slate-400">
             Enter a flight IATA or ICAO code. We will watch that flight, estimate your drive to the arrival airport, and surface major updates in the app.
           </p>
         </div>
-        <div className="grid gap-6 lg:grid-cols-[0.95fr,1.4fr]">
+        <div className="grid gap-6 lg:grid-cols-[0.9fr,1.7fr]">
           <div className="space-y-6">
             <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
               <p className="text-xs font-medium uppercase tracking-[0.18em] text-sky-300">Flight number</p>
@@ -60,7 +64,11 @@ export default async function FlightPage({
               </p>
             </div>
           </div>
-          <ArrivalBoard airportCode={airportCode} rows={arrivalBoard} />
+          <ArrivalBoard
+            airportCode={arrivalBoard.airportCode}
+            airportName={arrivalBoard.airportName}
+            rows={arrivalBoard.rows}
+          />
         </div>
         {trackedFlight ? (
           <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
