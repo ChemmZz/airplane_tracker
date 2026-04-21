@@ -32,3 +32,10 @@ export type UserFavorite = {
   region_id: string;
   created_at: string;
 };
+
+export type UserLiveRegion = {
+  clerk_user_id: string;
+  region_id: string;
+  updated_at: string;
+  is_paused: boolean;
+};

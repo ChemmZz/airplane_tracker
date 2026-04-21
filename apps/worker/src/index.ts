@@ -21,6 +21,23 @@ async function loadRegions(): Promise<Region[]> {
   return data as Region[];
 }
 
+async function loadLiveRegions(): Promise<Region[]> {
+  const { data, error } = await supabase()
+    .from("user_live_regions")
+    .select("region_id, is_paused, regions(*)")
+    .eq("is_paused", false);
+  if (error) throw new Error(`Load live regions: ${error.message}`);
+
+  const deduped = new Map<string, Region>();
+  for (const row of data ?? []) {
+    const region = Array.isArray(row.regions)
+      ? (row.regions[0] as Region | undefined)
+      : (row.regions as Region | null);
+    if (region) deduped.set(region.id, region);
+  }
+  return [...deduped.values()].sort((a, b) => a.slug.localeCompare(b.slug));
+}
+
 async function pollRegion(region: Region) {
   const started = Date.now();
   try {
@@ -40,14 +57,24 @@ async function pollRegion(region: Region) {
 
 async function main() {
   log.info("airplane_tracker worker starting");
-  const regions = await loadRegions();
-  log.info(`loaded ${regions.length} regions: ${regions.map((r) => r.slug).join(", ")}`);
+  await loadRegions();
 
   let idx = 0;
-  const pollTimer = setInterval(() => {
+  const pollLiveRegion = async () => {
+    const regions = await loadLiveRegions();
+    if (regions.length === 0) {
+      log.info("no live regions selected");
+      return;
+    }
+
     const region = regions[idx % regions.length];
     idx += 1;
-    void pollRegion(region);
+    log.info(`loaded ${regions.length} live regions: ${regions.map((r) => r.slug).join(", ")}`);
+    await pollRegion(region);
+  };
+
+  const pollTimer = setInterval(() => {
+    void pollLiveRegion();
   }, CONFIG.pollIntervalMs);
 
   const cleanupTimer = setInterval(() => {
@@ -55,8 +82,7 @@ async function main() {
   }, CONFIG.cleanupIntervalMs);
 
   // Kick off immediately instead of waiting pollIntervalMs.
-  void pollRegion(regions[0]);
-  idx = 1;
+  void pollLiveRegion();
 
   const shutdown = (signal: string) => {
     log.info(`received ${signal}, shutting down`);

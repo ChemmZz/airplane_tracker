@@ -6,7 +6,7 @@ import type { Flight } from "@/lib/types";
 
 export function useRealtimeFlights(
   supabase: SupabaseClient,
-  opts: { regionId?: string; icao24?: string },
+  opts: { regionId?: string; icao24?: string; enabled?: boolean },
 ) {
   const [flights, setFlights] = useState<Flight[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,6 +25,12 @@ export function useRealtimeFlights(
       }
     }
     seed();
+
+    if (opts.enabled === false) {
+      return () => {
+        cancelled = true;
+      };
+    }
 
     const filter = opts.regionId
       ? `region_id=eq.${opts.regionId}`
@@ -59,7 +65,7 @@ export function useRealtimeFlights(
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [supabase, opts.regionId, opts.icao24]);
+  }, [supabase, opts.regionId, opts.icao24, opts.enabled]);
 
   return { flights, loading };
 }
