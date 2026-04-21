@@ -53,10 +53,16 @@ export type AirLabsSchedule = {
   flight_number?: string | null;
   dep_iata?: string | null;
   dep_icao?: string | null;
+  dep_time?: string | null;
   dep_time_utc?: string | null;
+  dep_estimated?: string | null;
   dep_estimated_utc?: string | null;
+  arr_time?: string | null;
   arr_time_utc?: string | null;
+  arr_estimated?: string | null;
   arr_estimated_utc?: string | null;
+  arr_actual?: string | null;
+  arr_actual_utc?: string | null;
   status?: string | null;
 };
 
@@ -110,10 +116,16 @@ export async function getArrivalBoard(arrivalAirportIata: string, limit = 10) {
       "flight_number",
       "dep_iata",
       "dep_icao",
+      "dep_time",
       "dep_time_utc",
+      "dep_estimated",
       "dep_estimated_utc",
+      "arr_time",
       "arr_time_utc",
+      "arr_estimated",
       "arr_estimated_utc",
+      "arr_actual",
+      "arr_actual_utc",
       "status",
     ].join(","),
   });
@@ -150,7 +162,12 @@ export async function getArrivalBoard(arrivalAirportIata: string, limit = 10) {
       status: schedule.status ?? "scheduled",
       origin_code: schedule.dep_iata ?? schedule.dep_icao ?? "—",
       origin_name: schedule.dep_iata ? originNames[schedule.dep_iata] ?? schedule.dep_iata : schedule.dep_icao ?? "Unknown airport",
-      estimated_arrival_utc: schedule.arr_estimated_utc ?? schedule.arr_time_utc ?? null,
+      scheduled_arrival_local: schedule.arr_time ?? null,
+      scheduled_arrival_utc: schedule.arr_time_utc ?? null,
+      estimated_arrival_local: schedule.arr_estimated ?? null,
+      estimated_arrival_utc: schedule.arr_estimated_utc ?? null,
+      actual_arrival_local: schedule.arr_actual ?? null,
+      actual_arrival_utc: schedule.arr_actual_utc ?? null,
     })),
   };
 }
