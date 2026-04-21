@@ -1,10 +1,8 @@
-import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
-import { MAX_FAVORITE_REGIONS } from "@/lib/favorites";
-import { LIVE_REGION_POLL_INTERVAL_MS } from "@/lib/live-region";
-import { supabaseForUser } from "@/lib/supabase-server";
-import type { Region } from "@/lib/types";
-import { LiveRegionPanel } from "./live-region-panel";
+import { auth } from "@clerk/nextjs/server";
+import { FloatingTutorial } from "@/components/FloatingTutorial";
+import { getRecentNotificationEvents, getTrackedFlightForUser } from "@/lib/tracked-flight-server";
+import { TrackedFlightLiveView } from "./tracked-flight-live-view";
 
 export const dynamic = "force-dynamic";
 
@@ -12,77 +10,53 @@ export default async function DashboardPage() {
   const { userId } = await auth();
   if (!userId) return null;
 
-  const supabase = await supabaseForUser();
-  type LiveRegionRow = { region_id: string; regions: Region; is_paused: boolean };
-  const [{ data: favorites, error }, { data: liveRegion, error: liveRegionError }] = await Promise.all([
-    supabase
-      .from("user_favorites")
-      .select("region_id, regions(*)")
-      .returns<Array<{ region_id: string; regions: Region }>>(),
-    supabase
-      .from("user_live_regions")
-      .select("region_id, is_paused, regions(*)")
-      .returns<LiveRegionRow>()
-      .maybeSingle(),
+  const [trackedFlight, events] = await Promise.all([
+    getTrackedFlightForUser(),
+    getRecentNotificationEvents(),
   ]);
 
-  if (error || liveRegionError) {
+  if (!trackedFlight) {
     return (
-      <div className="rounded-lg border border-amber-700/60 bg-amber-950/30 p-6">
-        <h1 className="text-2xl font-bold">Dashboard unavailable</h1>
-        <p className="mt-2 text-amber-100/80">{error?.message ?? liveRegionError?.message}</p>
-      </div>
-    );
-  }
-
-  const regions = (favorites ?? []).map((f) => f.regions).filter(Boolean) as Region[];
-  const activeRegionRow = liveRegion as LiveRegionRow | null;
-  const activeRegion = activeRegionRow?.regions ?? null;
-
-  if (regions.length === 0) {
-    return (
-      <div className="rounded-lg border border-dashed border-slate-700 p-10 text-center">
-        <h2 className="text-xl font-semibold">No favorites yet</h2>
-        <p className="mt-2 text-slate-400">Pick up to {MAX_FAVORITE_REGIONS} regions to start watching.</p>
+      <div className="mx-auto max-w-3xl rounded-xl border border-dashed border-slate-700 p-10 text-center">
+        <h1 className="text-3xl font-bold">No flight selected yet</h1>
+        <p className="mt-3 text-slate-400">
+          Track one flight, then this dashboard will tell you when to leave, email you about major changes, and show the aircraft live when position data is available.
+        </p>
         <Link
-          href="/regions"
-          className="mt-6 inline-block rounded-md bg-sky-500 px-4 py-2 font-medium text-white hover:bg-sky-400"
+          href="/flight"
+          className="mt-6 inline-block rounded-md bg-sky-500 px-5 py-2.5 font-medium text-white hover:bg-sky-400"
         >
-          Choose regions
-        </Link>
-      </div>
-    );
-  }
-
-  if (!activeRegion) {
-    return (
-      <div className="rounded-lg border border-dashed border-slate-700 p-10 text-center">
-        <h2 className="text-xl font-semibold">Pick a live region</h2>
-        <p className="mt-2 text-slate-400">You can save up to {MAX_FAVORITE_REGIONS} regions, but only one streams live at a time.</p>
-        <Link
-          href="/regions"
-          className="mt-6 inline-block rounded-md bg-sky-500 px-4 py-2 font-medium text-white hover:bg-sky-400"
-        >
-          Choose live region
+          Choose a flight
         </Link>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Live region</h1>
-          <p className="mt-1 text-sm text-slate-400">
-            When active, this region is prioritized by the worker and refreshes about every {LIVE_REGION_POLL_INTERVAL_MS / 1000} seconds.
-          </p>
+    <>
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-sky-300">Pickup assistant</p>
+            <h1 className="mt-1 text-3xl font-bold">Plan your airport pickup</h1>
+            <p className="mt-2 max-w-3xl text-slate-400">
+              Your worker watches this flight, updates it in Supabase in real time, and emails you when the trip changes or when it is time to head out.
+            </p>
+          </div>
+          <Link href="/flight" className="text-sm text-sky-300 hover:underline">
+            Change tracked flight
+          </Link>
         </div>
-        <Link href="/regions" className="text-sm text-sky-300 hover:underline">
-          Edit regions
-        </Link>
+        <TrackedFlightLiveView initialFlight={trackedFlight} initialEvents={events} />
       </div>
-      <LiveRegionPanel region={activeRegion} initialPaused={activeRegionRow?.is_paused ?? false} />
-    </div>
+      <FloatingTutorial
+        title="How The Pickup Assistant Works"
+        steps={[
+          "Enter one flight number to make it your active tracked flight.",
+          "The worker polls AirLabs, writes updates into Supabase, and this dashboard updates live without refreshing.",
+          "Use your browser location to calculate the drive to the arrival airport and get a recommended time to leave.",
+        ]}
+      />
+    </>
   );
 }
