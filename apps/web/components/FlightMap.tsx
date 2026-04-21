@@ -8,7 +8,7 @@ import type { Flight, Region } from "@/lib/types";
 const planeIcon = (heading: number) =>
   L.divIcon({
     className: "",
-    html: `<div style="transform: rotate(${heading}deg); font-size: 22px; line-height: 22px;">✈</div>`,
+    html: `<div style="transform: rotate(${heading}deg); font-size: 22px; line-height: 22px; color: #f97316; text-shadow: -1px -1px 0 #020617, 1px -1px 0 #020617, -1px 1px 0 #020617, 1px 1px 0 #020617;" aria-hidden="true">✈</div>`,
     iconSize: [22, 22],
     iconAnchor: [11, 11],
   });
