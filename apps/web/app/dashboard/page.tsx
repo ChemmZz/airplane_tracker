@@ -11,10 +11,19 @@ export default async function DashboardPage() {
   if (!userId) return null;
 
   const supabase = await supabaseForUser();
-  const { data: favorites } = await supabase
+  const { data: favorites, error } = await supabase
     .from("user_favorites")
     .select("region_id, regions(*)")
     .returns<Array<{ region_id: string; regions: Region }>>();
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-amber-700/60 bg-amber-950/30 p-6">
+        <h1 className="text-2xl font-bold">Dashboard unavailable</h1>
+        <p className="mt-2 text-amber-100/80">{error.message}</p>
+      </div>
+    );
+  }
 
   const regions = (favorites ?? []).map((f) => f.regions).filter(Boolean) as Region[];
 

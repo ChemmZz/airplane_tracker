@@ -1,9 +1,16 @@
+import { resolve } from "node:path";
 import { fetchStates } from "./opensky.js";
 import { supabase, type Region } from "./supabase.js";
 import { upsertRegionStates } from "./upsert.js";
 import { cleanupStaleFlights } from "./cleanup.js";
 import { CONFIG } from "./config.js";
 import { log } from "./logger.js";
+
+// Next.js loads `.env.local` automatically; this standalone worker does not.
+// Load the worker env file on boot so local dev matches deploy-time behavior.
+(process as NodeJS.Process & { loadEnvFile?: (path?: string) => void }).loadEnvFile?.(
+  resolve(process.cwd(), ".env.local"),
+);
 
 async function loadRegions(): Promise<Region[]> {
   const { data, error } = await supabase().from("regions").select("*").order("slug");
