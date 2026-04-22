@@ -1,16 +1,11 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useUser } from "@clerk/nextjs";
+import { TrackedFlightMap } from "@/components/TrackedFlightMap";
 import { useSupabase } from "@/lib/supabase-browser";
-import { computeLeaveSummary, formatUtc } from "@/lib/tracked-flight";
+import { computeLeaveSummary, formatDisplayStatus, formatUtc, normalizeDisplayStatus, resolveArrivalEstimateUtc } from "@/lib/tracked-flight";
 import type { NotificationEvent, TrackedFlight } from "@/lib/types";
-
-const TrackedFlightMap = dynamic(
-  () => import("@/components/TrackedFlightMap").then((mod) => mod.TrackedFlightMap),
-  { ssr: false },
-);
 
 export function TrackedFlightLiveView({
   initialFlight,
@@ -60,6 +55,16 @@ export function TrackedFlightLiveView({
   }, [supabase, user]);
 
   const leaveSummary = useMemo(() => computeLeaveSummary(flight), [flight]);
+  const displayStatus = normalizeDisplayStatus({
+    status: flight.status,
+    depDelayed: flight.dep_delayed,
+    arrDelayed: flight.arr_delayed,
+  });
+  const leaveStatus = leaveSummary.leaveBy
+    ? leaveSummary.shouldLeave
+      ? { label: "Leave now", tone: "bg-rose-500/20 text-rose-200" }
+      : { label: "On track", tone: "bg-emerald-500/20 text-emerald-200" }
+    : { label: "Route needed", tone: "bg-slate-700 text-slate-200" };
 
   function updateRoute() {
     if (!navigator.geolocation) {
@@ -89,7 +94,22 @@ export function TrackedFlightLiveView({
             return;
           }
 
-          const body = (await res.json()) as { durationMinutes: number; distanceMeters: number };
+          const body = (await res.json()) as {
+            durationMinutes: number;
+            distanceMeters: number;
+            leaveByUtc: string | null;
+          };
+          setFlight((current) => ({
+            ...current,
+            origin_lat: position.coords.latitude,
+            origin_lng: position.coords.longitude,
+            origin_label: "Current location",
+            drive_duration_minutes: body.durationMinutes,
+            drive_distance_meters: body.distanceMeters,
+            last_location_at: new Date().toISOString(),
+            leave_by_utc: body.leaveByUtc,
+            leave_stage: body.leaveByUtc ? "idle" : current.leave_stage,
+          }));
           setRouteMessage(
             `Driving ETA updated: ${body.durationMinutes} min over ${Math.round(body.distanceMeters / 1000)} km.`,
           );
@@ -117,28 +137,44 @@ export function TrackedFlightLiveView({
                 {flight.dep_name ?? "Departure airport"} to {flight.arr_name ?? "Arrival airport"}
               </p>
             </div>
-            <span className="rounded-full bg-sky-500/20 px-3 py-1 text-sm font-medium text-sky-200">
-              {flight.status ?? "status pending"}
+            <span className={`rounded-full px-3 py-1 text-sm font-medium ${statusTone(displayStatus)}`}>
+              {formatDisplayStatus(displayStatus)}
             </span>
           </div>
 
           <dl className="mt-5 grid gap-3 sm:grid-cols-2">
             <Metric label="Departure estimate" value={formatUtc(flight.dep_estimated_utc ?? flight.dep_time_utc)} />
-            <Metric label="Arrival estimate" value={formatUtc(flight.arr_estimated_utc ?? flight.arr_time_utc)} />
+            <Metric
+              label="Arrival estimate"
+              value={formatUtc(
+                resolveArrivalEstimateUtc({
+                  arrEstimatedUtc: flight.arr_estimated_utc,
+                  arrTimeUtc: flight.arr_time_utc,
+                  arrDelayed: flight.arr_delayed,
+                }),
+              )}
+            />
             <Metric label="Departure delay" value={flight.dep_delayed != null ? `${flight.dep_delayed} min` : "—"} />
             <Metric label="Arrival delay" value={flight.arr_delayed != null ? `${flight.arr_delayed} min` : "—"} />
-            <Metric label="Gate" value={flight.arr_gate ?? flight.dep_gate ?? "—"} />
+            <Metric label="Arrival terminal" value={flight.arr_terminal ?? "—"} />
+            <Metric label="Departure gate" value={flight.dep_gate ?? "—"} />
             <Metric label="Aircraft" value={flight.aircraft_model ?? flight.aircraft_icao ?? "—"} />
           </dl>
         </div>
 
         <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-emerald-300">Pickup timing</p>
-          <h3 className="mt-2 text-xl font-semibold text-white">
-            {leaveSummary.leaveBy ? (leaveSummary.shouldLeave ? "Leave now" : formatUtc(leaveSummary.leaveBy.toISOString())) : "Waiting for route ETA"}
-          </h3>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <h3 className="text-xl font-semibold text-white">
+              Leave by{" "}
+              <span className="text-emerald-300">
+                {leaveSummary.leaveBy ? formatUtc(leaveSummary.leaveBy.toISOString()) : "Waiting for route ETA"}
+              </span>
+            </h3>
+            <span className={`rounded-full px-3 py-1 text-sm font-medium ${leaveStatus.tone}`}>{leaveStatus.label}</span>
+          </div>
           <p className="mt-2 text-sm text-slate-400">
-            The leave time uses your latest browser location, current driving ETA, and a {flight.pickup_buffer_minutes}-minute post-landing pickup buffer.
+            This is your actionable departure time based on your latest browser location, current driving ETA, and a {flight.pickup_buffer_minutes}-minute post-landing pickup buffer.
           </p>
           <div className="mt-4 space-y-2 text-sm text-slate-300">
             <p>Driving ETA: {flight.drive_duration_minutes != null ? `${flight.drive_duration_minutes} min` : "Not calculated yet"}</p>
@@ -198,4 +234,11 @@ function Metric({ label, value }: { label: string; value: string }) {
       <dd className="mt-1 text-sm font-medium text-white">{value}</dd>
     </div>
   );
+}
+
+function statusTone(status: string) {
+  if (status.includes("cancel")) return "bg-rose-500/20 text-rose-200";
+  if (status.includes("delay")) return "bg-amber-400/20 text-amber-200";
+  if (status.includes("land")) return "bg-slate-100/10 text-white";
+  return "bg-sky-500/20 text-sky-200";
 }

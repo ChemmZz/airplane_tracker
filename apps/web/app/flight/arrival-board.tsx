@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { useState } from "react";
-import { formatUtc } from "@/lib/tracked-flight";
+import { formatDisplayStatus, formatUtc } from "@/lib/tracked-flight";
 
 type ArrivalRow = {
   airline_name: string;
@@ -25,10 +25,12 @@ type ArrivalRow = {
 export function ArrivalBoard({
   airportCode,
   airportName,
+  errorMessage,
   rows,
 }: {
   airportCode: string;
   airportName: string;
+  errorMessage?: string | null;
   rows: ArrivalRow[];
 }) {
   const router = useRouter();
@@ -43,10 +45,9 @@ export function ArrivalBoard({
   const statusOptions = [...new Set(rows.map((row) => normalizeStatus(row.status)))].sort((a, b) => a.localeCompare(b));
   const originOptions = [...new Set(rows.map((row) => row.origin_name).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const filteredRows = rows.filter((row) => {
-    const normalizedStatus = normalizeStatus(row.status);
     return (
       (selectedAirline === "all" || row.airline_name === selectedAirline) &&
-      (selectedStatus === "all" || normalizedStatus === selectedStatus) &&
+      (selectedStatus === "all" || normalizeStatus(row.status) === selectedStatus) &&
       (selectedOrigin === "all" || row.origin_name === selectedOrigin)
     );
   });
@@ -138,7 +139,7 @@ export function ArrivalBoard({
       </div>
 
       <div className="mt-4 overflow-x-auto">
-        <table className="min-w-[920px] text-left text-sm">
+        <table className="min-w-[1040px] text-left text-sm">
           <thead className="text-xs uppercase tracking-[0.16em] text-slate-500">
             <tr>
               <th className="pb-3 pr-4">Flight</th>
@@ -152,12 +153,13 @@ export function ArrivalBoard({
           <tbody>
             {filteredRows.map((row) => {
               const code = row.flight_iata ?? row.flight_number ?? "";
-              const statusTone = statusClasses(row.status);
+              const displayStatus = normalizeStatus(row.status);
+              const statusTone = statusClasses(displayStatus);
               return (
                 <tr key={`${code}-${row.origin_code}`} className="border-t border-slate-800 text-slate-200">
                   <td className="py-3 pr-4 font-mono whitespace-nowrap">{code || "—"}</td>
                   <td className="py-3 pr-4 whitespace-nowrap">{row.airline_name}</td>
-                  <td className={`py-3 pr-4 whitespace-nowrap font-semibold ${statusTone}`}>{formatStatusLabel(row.status)}</td>
+                  <td className={`py-3 pr-4 whitespace-nowrap font-semibold ${statusTone}`}>{formatDisplayStatus(displayStatus)}</td>
                   <td className="py-3 pr-6 min-w-[220px]">
                     <div className="font-medium text-white">{row.origin_name}</div>
                     <div className="text-xs text-slate-500">{row.origin_code}</div>
@@ -184,7 +186,8 @@ export function ArrivalBoard({
         </table>
       </div>
 
-      {rows.length === 0 ? <p className="mt-4 text-sm text-slate-400">No arrivals were returned for this airport.</p> : null}
+      {errorMessage ? <p className="mt-4 text-sm text-amber-300">{errorMessage}</p> : null}
+      {rows.length === 0 && !errorMessage ? <p className="mt-4 text-sm text-slate-400">No arrivals were returned for this airport.</p> : null}
       {rows.length > 0 && filteredRows.length === 0 ? (
         <p className="mt-4 text-sm text-slate-400">No arrivals match the current filters.</p>
       ) : null}
@@ -197,28 +200,18 @@ function normalizeStatus(status: string) {
   return status.trim().toLowerCase();
 }
 
-function formatStatusLabel(status: string) {
-  const normalized = normalizeStatus(status);
-  return normalized
-    .split(/[\s_-]+/)
-    .filter(Boolean)
-    .map((part) => part[0]?.toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
 function statusClasses(status: string) {
-  const normalized = normalizeStatus(status);
-  if (normalized.includes("cancel")) return "text-rose-400";
-  if (normalized.includes("delay")) return "text-amber-300";
-  if (normalized.includes("land")) return "text-white";
+  if (status.includes("cancel")) return "text-rose-400";
+  if (status.includes("delay")) return "text-amber-300";
+  if (status.includes("land")) return "text-white";
   return "text-slate-200";
 }
 
 function formatArrivalDisplay(row: ArrivalRow) {
-  const normalized = normalizeStatus(row.status);
+  const displayStatus = normalizeStatus(row.status);
 
-  if (normalized.includes("cancel")) return "Cancelled";
-  if (normalized.includes("land")) {
+  if (displayStatus.includes("cancel")) return "Cancelled";
+  if (displayStatus.includes("land")) {
     const actualArrival = formatAirportBoardTime(row.actual_arrival_local, row.actual_arrival_utc);
     return actualArrival === "—" ? "Arrived" : `Arrived ${actualArrival}`;
   }

@@ -18,6 +18,12 @@ async function loadTrackedFlights(): Promise<TrackedFlightRow[]> {
   return (data ?? []) as TrackedFlightRow[];
 }
 
+function isPollDue(flight: TrackedFlightRow) {
+  if (!flight.last_polled_at) return true;
+  const lastPolledAt = new Date(flight.last_polled_at).getTime();
+  return Date.now() - lastPolledAt >= CONFIG.pollIntervalMs;
+}
+
 async function pollTrackedFlight(previous: TrackedFlightRow) {
   try {
     const live = await fetchFlight({
@@ -108,9 +114,22 @@ async function main() {
       return;
     }
 
-    const flight = trackedFlights[idx % trackedFlights.length];
-    idx += 1;
-    await pollTrackedFlight(flight);
+    let nextFlight: TrackedFlightRow | null = null;
+    for (let offset = 0; offset < trackedFlights.length; offset += 1) {
+      const candidateIndex = (idx + offset) % trackedFlights.length;
+      const candidate = trackedFlights[candidateIndex];
+      if (!isPollDue(candidate)) continue;
+      nextFlight = candidate;
+      idx = candidateIndex + 1;
+      break;
+    }
+
+    if (!nextFlight) {
+      log.info("no tracked flights are due for polling");
+      return;
+    }
+
+    await pollTrackedFlight(nextFlight);
   };
 
   const timer = setInterval(() => {

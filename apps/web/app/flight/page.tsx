@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
 import { FloatingTutorial } from "@/components/FloatingTutorial";
-import { getArrivalBoard } from "@/lib/airlabs";
+import { AirLabsApiError, getArrivalBoard } from "@/lib/airlabs";
 import { getTrackedFlightForUser } from "@/lib/tracked-flight-server";
 import { ArrivalBoard } from "./arrival-board";
 import { TrackFlightForm } from "./track-flight-form";
@@ -19,11 +19,20 @@ export default async function FlightPage({
   const params = (await searchParams) ?? {};
   const trackedFlight = await getTrackedFlightForUser();
   const airportCode = (params.airport ?? trackedFlight?.arr_iata ?? "ORD").toUpperCase();
-  const arrivalBoard = await getArrivalBoard(airportCode, 10).catch(() => ({
-    airportCode,
-    airportName: airportCode,
-    rows: [],
-  }));
+  let arrivalBoardError: string | null = null;
+  const arrivalBoard = await getArrivalBoard(airportCode, 10).catch((error) => {
+    if (error instanceof AirLabsApiError && error.message.toLowerCase().includes("monthly request limit")) {
+      arrivalBoardError = "Arrival board is temporarily unavailable because the AirLabs monthly request limit has been exceeded.";
+    } else {
+      console.error(`[flight] failed to load arrival board for ${airportCode}`, error);
+      arrivalBoardError = "Arrival board is temporarily unavailable right now.";
+    }
+    return {
+      airportCode,
+      airportName: airportCode,
+      rows: [],
+    };
+  });
 
   return (
     <>
@@ -67,6 +76,7 @@ export default async function FlightPage({
           <ArrivalBoard
             airportCode={arrivalBoard.airportCode}
             airportName={arrivalBoard.airportName}
+            errorMessage={arrivalBoardError}
             rows={arrivalBoard.rows}
           />
         </div>

@@ -3,6 +3,16 @@ type AirLabsEnvelope<T> = {
   error?: { message?: string; code?: string } | null;
 };
 
+export class AirLabsApiError extends Error {
+  constructor(
+    message: string,
+    public readonly apiCode?: string | null,
+  ) {
+    super(message);
+    this.name = "AirLabsApiError";
+  }
+}
+
 export type AirLabsFlight = {
   hex?: string | null;
   reg_number?: string | null;
@@ -71,6 +81,40 @@ type AirLabsAirline = {
   iata_code?: string | null;
 };
 
+const airportCache = new Map<string, Promise<AirLabsAirport | null>>();
+const ARRIVAL_BOARD_TTL_MS = 5 * 60_000;
+
+type ArrivalBoardRow = {
+  airline_name: string;
+  airline_iata: string | null;
+  flight_iata: string | null;
+  flight_number: string | null;
+  status: string;
+  origin_code: string;
+  origin_name: string;
+  scheduled_arrival_local: string | null;
+  scheduled_arrival_utc: string | null;
+  estimated_arrival_local: string | null;
+  estimated_arrival_utc: string | null;
+  actual_arrival_local: string | null;
+  actual_arrival_utc: string | null;
+};
+
+type ArrivalBoardData = {
+  airportCode: string;
+  airportName: string;
+  rows: ArrivalBoardRow[];
+};
+
+const arrivalBoardCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    value?: ArrivalBoardData;
+    error?: Error;
+  }
+>();
+
 function apiKey() {
   const key = process.env.AIRLABS_API_KEY;
   if (!key) throw new Error("Missing AIRLABS_API_KEY");
@@ -82,7 +126,7 @@ async function airlabs<T>(path: string, params: Record<string, string>) {
   const res = await fetch(`https://airlabs.co/api/v9/${path}?${qs}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`AirLabs ${path} failed: ${res.status}`);
   const json = (await res.json()) as AirLabsEnvelope<T>;
-  if (json.error) throw new Error(json.error.message ?? `AirLabs ${path} error`);
+  if (json.error) throw new AirLabsApiError(json.error.message ?? `AirLabs ${path} error`, json.error.code ?? null);
   return json.response;
 }
 
@@ -101,73 +145,88 @@ export async function findFlightByCode(code: string) {
 
 export async function getAirportByCode(code: string | null | undefined) {
   if (!code) return null;
-  const rows = await airlabs<AirLabsAirport[]>("airports", { iata_code: code });
-  return rows[0] ?? null;
+  const normalized = code.trim().toUpperCase();
+  const existing = airportCache.get(normalized);
+  if (existing) return existing;
+
+  const pending = airlabs<AirLabsAirport[]>("airports", { iata_code: normalized })
+    .then((rows) => rows[0] ?? null)
+    .catch((error) => {
+      airportCache.delete(normalized);
+      throw error;
+    });
+  airportCache.set(normalized, pending);
+  return pending;
 }
 
 export async function getArrivalBoard(arrivalAirportIata: string, limit = 10) {
-  const arrivalAirport = await getAirportByCode(arrivalAirportIata).catch(() => null);
-  const schedules = await airlabs<AirLabsSchedule[]>("schedules", {
-    arr_iata: arrivalAirportIata,
-    limit: String(limit),
-    _fields: [
-      "airline_iata",
-      "flight_iata",
-      "flight_number",
-      "dep_iata",
-      "dep_icao",
-      "dep_time",
-      "dep_time_utc",
-      "dep_estimated",
-      "dep_estimated_utc",
-      "arr_time",
-      "arr_time_utc",
-      "arr_estimated",
-      "arr_estimated_utc",
-      "arr_actual",
-      "arr_actual_utc",
-      "status",
-    ].join(","),
-  });
+  const normalizedAirport = arrivalAirportIata.trim().toUpperCase();
+  const cacheKey = `${normalizedAirport}:${limit}`;
+  const now = Date.now();
+  const cached = arrivalBoardCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    if (cached.error) throw cached.error;
+    if (cached.value) return cached.value;
+  }
 
-  const airlineCodes = [...new Set(schedules.map((s) => s.airline_iata).filter(Boolean))] as string[];
-  const airlinePairs = await Promise.all(
-    airlineCodes.map(async (code) => {
-      const rows = await airlabs<AirLabsAirline[]>("airlines", {
-        iata_code: code,
-        _fields: "name,iata_code",
-      }).catch(() => []);
-      return [code, rows[0]?.name ?? code] as const;
-    }),
-  );
-  const airlineNames = Object.fromEntries(airlinePairs);
+  try {
+    const schedules = await airlabs<AirLabsSchedule[]>("schedules", {
+      arr_iata: normalizedAirport,
+      limit: String(limit),
+      _fields: [
+        "airline_iata",
+        "flight_iata",
+        "flight_number",
+        "dep_iata",
+        "dep_icao",
+        "dep_time",
+        "dep_time_utc",
+        "dep_estimated",
+        "dep_estimated_utc",
+        "arr_time",
+        "arr_time_utc",
+        "arr_estimated",
+        "arr_estimated_utc",
+        "arr_actual",
+        "arr_actual_utc",
+        "status",
+      ].join(","),
+    });
 
-  const originCodes = [...new Set(schedules.map((s) => s.dep_iata).filter(Boolean))] as string[];
-  const originPairs = await Promise.all(
-    originCodes.map(async (code) => {
-      const airport = await getAirportByCode(code).catch(() => null);
-      return [code, airport?.name ?? code] as const;
-    }),
-  );
-  const originNames = Object.fromEntries(originPairs);
+    const result: ArrivalBoardData = {
+      airportCode: normalizedAirport,
+      airportName: normalizedAirport,
+      rows: schedules.map((schedule) => {
+        const originCode = schedule.dep_iata ?? schedule.dep_icao ?? "—";
+        return {
+          airline_name: schedule.airline_iata ?? "Unknown",
+          airline_iata: schedule.airline_iata ?? null,
+          flight_iata: schedule.flight_iata ?? null,
+          flight_number: schedule.flight_number ?? null,
+          status: schedule.status ?? "scheduled",
+          origin_code: originCode,
+          origin_name: originCode,
+          scheduled_arrival_local: schedule.arr_time ?? null,
+          scheduled_arrival_utc: schedule.arr_time_utc ?? null,
+          estimated_arrival_local: schedule.arr_estimated ?? null,
+          estimated_arrival_utc: schedule.arr_estimated_utc ?? null,
+          actual_arrival_local: schedule.arr_actual ?? null,
+          actual_arrival_utc: schedule.arr_actual_utc ?? null,
+        };
+      }),
+    };
 
-  return {
-    airportCode: arrivalAirportIata,
-    airportName: arrivalAirport?.name ?? arrivalAirportIata,
-    rows: schedules.map((schedule) => ({
-      airline_name: schedule.airline_iata ? airlineNames[schedule.airline_iata] ?? schedule.airline_iata : "Unknown",
-      airline_iata: schedule.airline_iata ?? null,
-      flight_iata: schedule.flight_iata ?? null,
-      flight_number: schedule.flight_number ?? null,
-      status: schedule.status ?? "scheduled",
-      origin_code: schedule.dep_iata ?? schedule.dep_icao ?? "—",
-      origin_name: schedule.dep_iata ? originNames[schedule.dep_iata] ?? schedule.dep_iata : schedule.dep_icao ?? "Unknown airport",
-      scheduled_arrival_local: schedule.arr_time ?? null,
-      scheduled_arrival_utc: schedule.arr_time_utc ?? null,
-      estimated_arrival_local: schedule.arr_estimated ?? null,
-      estimated_arrival_utc: schedule.arr_estimated_utc ?? null,
-      actual_arrival_local: schedule.arr_actual ?? null,
-      actual_arrival_utc: schedule.arr_actual_utc ?? null,
-    })),
-  };
+    arrivalBoardCache.set(cacheKey, {
+      expiresAt: now + ARRIVAL_BOARD_TTL_MS,
+      value: result,
+    });
+    return result;
+  } catch (error) {
+    const nextError = error instanceof Error ? error : new Error("Unknown arrival board error");
+    arrivalBoardCache.set(cacheKey, {
+      expiresAt: now + ARRIVAL_BOARD_TTL_MS,
+      error: nextError,
+    });
+    throw nextError;
+  }
 }

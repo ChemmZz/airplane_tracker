@@ -20,7 +20,7 @@ export default async function DashboardPage() {
       <div className="mx-auto max-w-3xl rounded-xl border border-dashed border-slate-700 p-10 text-center">
         <h1 className="text-3xl font-bold">No flight selected yet</h1>
         <p className="mt-3 text-slate-400">
-          Track one flight, then this dashboard will tell you when to leave, email you about major changes, and show the aircraft live when position data is available.
+          Track one flight, then this dashboard will tell you when to leave, surface major changes in-app, and show the aircraft live when position data is available.
         </p>
         <Link
           href="/flight"
@@ -40,7 +40,7 @@ export default async function DashboardPage() {
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-sky-300">Pickup assistant</p>
             <h1 className="mt-1 text-3xl font-bold">Plan your airport pickup</h1>
             <p className="mt-2 max-w-3xl text-slate-400">
-              Your worker watches this flight, updates it in Supabase in real time, and emails you when the trip changes or when it is time to head out.
+              Your worker watches this flight, updates it in Supabase in real time, and keeps this dashboard current as the trip changes or when it is time to head out.
             </p>
           </div>
           <Link href="/flight" className="text-sm text-sky-300 hover:underline">
